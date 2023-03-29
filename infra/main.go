@@ -82,7 +82,7 @@ func main() {
 			"dns.googleapis.com"}
 
 		for i, service := range services {
-			_, err = projects.NewService(ctx, fmt.Printf("api-%v", i), &projects.ServiceArgs{
+			_, err = projects.NewService(ctx, fmt.Sprintf("api-%d", i), &projects.ServiceArgs{
 				DisableDependentServices: pulumi.Bool(false),
 				Project:                  project.ProjectId,
 				Service:                  pulumi.String(service),
