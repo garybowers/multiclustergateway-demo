@@ -16,21 +16,18 @@ package main
 
 import (
 	"fmt"
+	gkecluster "infra/modules/gke-cluster"
+	cloudnat "infra/modules/net-cloudnat"
 
 	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp"
 	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/organizations"
 	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/serviceaccount"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
-
-type ContainerClusterState struct {
-	pulumi.ResourceState
-}
-
-type ContainerClusterArgs struct{}
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
@@ -117,7 +114,7 @@ func main() {
 
 		// Create the required subnetworks
 		for i, region := range regions {
-			_, err := compute.NewSubnetwork(ctx, fmt.Sprintf("sn-%d-%s", i, region), &compute.SubnetworkArgs{
+			sn, err := compute.NewSubnetwork(ctx, fmt.Sprintf("sn-%d-%s", i, region), &compute.SubnetworkArgs{
 				Project:               project.ProjectId,
 				Network:               vpc.SelfLink,
 				Region:                pulumi.String(region),
@@ -127,44 +124,34 @@ func main() {
 			if err != nil {
 				return err
 			}
+
+			gke, err := gkecluster.NewContainerCluster(ctx, fmt.Sprintf("gke-%v", region), gkecluster.ContainerClusterArgs{
+				ProjectId: project.ProjectId,
+				Region:    pulumi.String(region),
+				VpcConfig: gkecluster.ContainerClusterVpcConfig{
+					Network:    vpc.SelfLink,
+					SubNetwork: sn.SelfLink,
+				},
+			}, nil)
+			if err != nil {
+				return err
+			}
+			fmt.Println(gke)
 		}
 
 		// Create a NAT Router
 		for i, region := range regions {
-			router, err := compute.NewRouter(ctx, fmt.Sprintf("rtr-%d-%s", i, region), &compute.RouterArgs{
-				Project: project.ProjectId,
-				Region:  pulumi.String(region),
-				Network: vpc.SelfLink,
-				Bgp: &compute.RouterBgpArgs{
-					Asn: pulumi.Int(64514),
-				},
-			})
+			cloudnat, err := cloudnat.NewNetCloudNat(ctx, fmt.Sprintf("cn-%d-%v", i, region), cloudnat.NetCloudNatArgs{
+				ProjectId:  project.ProjectId,
+				Region:     pulumi.String(region),
+				VpcNetwork: vpc.SelfLink,
+			}, nil)
 			if err != nil {
 				return err
 			}
-			_, err = compute.NewRouterNat(ctx, fmt.Sprintf("nat-gw-%d-%s", i, region), &compute.RouterNatArgs{
-				Project:                       project.ProjectId,
-				Region:                        pulumi.String(region),
-				Router:                        router.Name,
-				NatIpAllocateOption:           pulumi.String("AUTO_ONLY"),
-				SourceSubnetworkIpRangesToNat: pulumi.String("ALL_SUBNETWORKS_ALL_IP_RANGES"),
-				LogConfig: &compute.RouterNatLogConfigArgs{
-					Enable: pulumi.Bool(true),
-					Filter: pulumi.String("ERRORS_ONLY"),
-				},
-			})
+			fmt.Println(cloudnat)
 		}
 
 		return nil
 	})
-}
-
-func NewContainerCluster(ctx *pulumi.Context, name string, opts ...pulumi.ResourceOption) (*ContainerClusterState, error) {
-	containerCluster := &ContainerClusterState{}
-	err := ctx.RegisterComponentResource("pkg:google:ContainerCluster", name, containerCluster, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return containerCluster, nil
 }
