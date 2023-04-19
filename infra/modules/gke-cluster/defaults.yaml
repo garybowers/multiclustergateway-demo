@@ -1,0 +1,5 @@
+GKENodePoolArgs:
+  NodeConfig:
+    MachineType: "e2-medium"
+    DiskSizeGb: 100
+    DiskType: "PD-BALANCED"

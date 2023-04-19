@@ -71,7 +71,7 @@ func main() {
 		var project *organizations.Project
 		// Create the project using our credentials from the above provider configuration
 		project, err = organizations.NewProject(ctx, "mcg-demo", &organizations.ProjectArgs{
-			ProjectId:         pulumi.String("mcg-demo-h38hr3"),
+			ProjectId:         pulumi.String("mcg-demo-h38hr1"),
 			FolderId:          folder.Name,
 			AutoCreateNetwork: pulumi.Bool(false),
 			BillingAccount:    pulumi.String(billingAccount),
@@ -109,12 +109,11 @@ func main() {
 
 		regions := []string{
 			"europe-west1",
-			"us-central1",
 		}
 
-		// Create the required subnetworks
 		for i, region := range regions {
-			sn, err := compute.NewSubnetwork(ctx, fmt.Sprintf("sn-%d-%s", i, region), &compute.SubnetworkArgs{
+			// Create the required subnetworks
+			sn, err := compute.NewSubnetwork(ctx, fmt.Sprintf("sn-%d", i), &compute.SubnetworkArgs{
 				Project:               project.ProjectId,
 				Network:               vpc.SelfLink,
 				Region:                pulumi.String(region),
@@ -125,10 +124,11 @@ func main() {
 				return err
 			}
 
-			gke, err := gkecluster.NewContainerCluster(ctx, fmt.Sprintf("gke-%v", region), gkecluster.ContainerClusterArgs{
+			// Create the GKE Clusters in each region
+			gke, err := gkecluster.NewGKECluster(ctx, fmt.Sprintf("gke-%d", i), gkecluster.GKEArgs{
 				ProjectId: project.ProjectId,
-				Region:    pulumi.String(region),
-				VpcConfig: gkecluster.ContainerClusterVpcConfig{
+				Location:  pulumi.String(region),
+				NetConfig: gkecluster.GKENetworkConfig{
 					Network:    vpc.SelfLink,
 					SubNetwork: sn.SelfLink,
 				},
@@ -136,11 +136,22 @@ func main() {
 			if err != nil {
 				return err
 			}
-			fmt.Println(gke)
-		}
 
-		// Create a NAT Router
-		for i, region := range regions {
+			// Creat the NodePools
+			_, err = gkecluster.NewGKENodePool(ctx, fmt.Sprintf("gke-np-%d", i), gkecluster.GKENodePoolArgs{
+				ProjectId: project.ProjectId,
+				Cluster:   gke.Name,
+				Location:  gke.Location,
+
+				NodeConfig: gkecluster.GKENodePoolNodeConfig{
+					DiskSizeGb: 80,
+				},
+			}, nil)
+			if err != nil {
+				return err
+			}
+
+			// Create a NAT Router in each region
 			cloudnat, err := cloudnat.NewNetCloudNat(ctx, fmt.Sprintf("cn-%d-%v", i, region), cloudnat.NetCloudNatArgs{
 				ProjectId:  project.ProjectId,
 				Region:     pulumi.String(region),
